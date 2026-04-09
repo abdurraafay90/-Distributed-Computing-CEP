@@ -1,0 +1,33 @@
+Prompt Content:
+
+Act as a Senior Distributed Systems Engineer. Generate a non-monolithic, multi-agent microservice architecture for my CS-432 final project.
+
+System Architecture:
+
+Gateway Agent (FastAPI - ThinkPad Port 8000):
+
+The entry point. Receives user prompts from the Vercel frontend.
+
+DynamoDB Logic: Use boto3 to log the task in the CS432_Tasks table (Partition Key: user_id, Sort Key: task_timestamp). Initial status: "IN_PROGRESS".
+
+Distributed Flow: >       * First, call the Researcher Agent at http://localhost:8001/research.
+
+Then, send the research results to the AWS Summarizer Agent at http://YOUR_EC2_PUBLIC_IP:11434/api/generate using the gemma:2b model.
+
+Finalization: Update DynamoDB status to "COMPLETED", store the AI summary, and return the result.
+
+Researcher Agent (FastAPI - ThinkPad Port 8001):
+
+A separate service. For this prototype, return a mock string of "Raw data" based on the input query.
+
+Frontend (Next.js - Vercel):
+
+A clean UI with a text area and a submit button.
+
+Calls the Gateway via a NEXT_PUBLIC_GATEWAY_URL environment variable (the Ngrok tunnel).
+
+Requirements:
+
+Provide separate code blocks for gateway/main.py, researcher/main.py, and the Next.js page.tsx.
+
+Include requirements.txt for the Python agents.
