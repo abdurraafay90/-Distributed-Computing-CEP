@@ -1,42 +1,58 @@
-# CS-432 Final Project: Multi-Agent Research Microservices
+# Neuraid: Distributed Multi-Agent Research System
 
-## Architecture
-- **Gateway Agent (Port 8000)**: Entry point, DynamoDB logger, and orchestrator.
-- **Researcher Agent (Port 8001)**: Returns mock data for specific queries.
-- **EC2 Summarizer**: Runs `gemma:2b` on Ollama (External).
-- **Frontend (Vercel/Next.js)**: UI for interaction.
+**Course**: CS-432 Distributed Computing
+**Final Project: Multi-Agent Microservice Architecture**
 
-## Setup Instructions
+## 🌐 Overview
+Neuraid is a distributed, agentic system designed to research real-time news and provide AI-generated summaries. It leverages a modern microservice architecture, distributed across local environments and AWS cloud.
 
-### 1. Python Services
-Install dependencies:
+### 🏗️ Distributed Components
+*   **Next.js Frontend**: A modern, React-based user interface with a retractable sidebar, research history, and dark mode. Hosted on Vercel.
+*   **Gateway Agent (FastAPI)**: Acts as the orchestrator. It manages user tasks, logs data to DynamoDB, and generates contextual titles for each research session.
+*   **Researcher Agent (FastAPI)**: Specializes in web intelligence. It uses the **Tavily AI Search API** to retrieve high-quality, real-time news data.
+*   **Summarizer Agent (Ollama/EC2)**: A cloud-hosted AI model (**Gemma:2b**) that processes raw research data into concise, factual summaries.
+*   **AWS DynamoDB**: A schemaless NoSQL database for storing user research history, task statuses, and generated titles.
+
+---
+
+## 🚀 Deployment
+
+### 1. Prerequisites
+- Python 3.10+
+- Node.js & npm (for frontend)
+- Ngrok CLI (for tunneling)
+- AWS Account with DynamoDB & EC2 (Ubuntu)
+
+### 2. Environment Setup
+Create a `.env` file with your AWS credentials and Tavily API key:
+```env
+AWS_ACCESS_KEY_ID=xxx
+AWS_SECRET_ACCESS_KEY=xxx
+TAVILY_API_KEY=xxx
+```
+
+### 3. Running Locally
 ```bash
+# 1. Install Dependencies
 pip install -r requirements.txt
+
+# 2. Start Microservices
+python researcher/main.py (Port 8001)
+python gateway/main.py (Port 8000)
+
+# 3. Open the Tunnel
+ngrok http 8000
 ```
 
-Run Researcher:
-```bash
-python researcher/main.py
-```
+---
 
-Run Gateway (Ensure AWS Credentials in code/env are valid):
-```bash
-python gateway/main.py
-```
+## 🛠️ Key Distributed Features
+*   **Parallel Orchestration**: The system is designed to handle multiple research requests simultaneously.
+*   **Scalable Memory**: Research history is stored in a distributed DynamoDB table, accessible from any client.
+*   **Cloud Inference**: LLM processing is offloaded to an AWS EC2 instance, allowing local machines to remain lightweight.
+*   **Contextual Title Generation**: Automatically summarizes the user's prompt into a 3-word title for better UX.
 
-### 2. Frontend
-Set environment variable for the Gateway (e.g., in `.env.local` or Vercel dashboard):
-```bash
-NEXT_PUBLIC_GATEWAY_URL=https://your-ngrok-url.ngrok-free.app
-```
+---
 
-Run dev server:
-```bash
-cd frontend
-npm install
-npm run dev
-```
-
-## AWS Requirements
-- **DynamoDB Table**: `CS432_Tasks` (PK: `user_id`, SK: `task_timestamp`).
-- **EC2 Summarizer**: Ollama installed with `gemma:2b` model pulled, port 11434 open.
+## 📄 License
+This project is for educational purposes only as part of the CS-432 Final Evaluation.

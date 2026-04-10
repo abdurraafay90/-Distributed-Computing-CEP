@@ -47,6 +47,22 @@ export default function Home() {
 
   useEffect(() => { fetchHistory(); }, []);
 
+  const handleSelectHistory = (item: any) => {
+    // Clear current messages and load the historical data
+    setMessages([
+      { role: 'user', content: item.prompt },
+      { 
+        role: 'assistant', 
+        summary: item.summary, 
+        research: item.research,
+        status: 'COMPLETED' 
+      }
+    ]);
+    
+    // Optional: Close sidebar on mobile after selection
+    if (window.innerWidth < 768) setIsSidebarOpen(false);
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!prompt.trim() || loading) return;
@@ -97,6 +113,7 @@ export default function Home() {
             history.map((item, i) => (
               <button 
                 key={i} 
+                onClick={() => handleSelectHistory(item)}
                 className="w-full text-left p-3 text-sm hover:bg-zinc-200 dark:hover:bg-zinc-800 rounded-xl truncate transition-colors group relative"
                 title={item.prompt} // Show full prompt on hover
               >
