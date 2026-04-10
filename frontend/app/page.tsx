@@ -31,7 +31,7 @@ export default function Home() {
       setResult(data);
     } catch (error) {
       console.error('Error fetching data:', error);
-      setResult({ error: 'Failed to call Gateway API. Ensure the Ngrok tunnel is active.' });
+      setResult({ error: `Failed to reach Gateway at ${gatewayUrl}. Ensure the Ngrok tunnel is active and Vercel env vars are updated.` });
     } finally {
       setLoading(false);
     }

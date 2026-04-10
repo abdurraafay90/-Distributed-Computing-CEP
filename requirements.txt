@@ -4,3 +4,5 @@ boto3
 httpx
 pydantic
 python-dotenv
+duckduckgo-search
+beautifulsoup4

@@ -1,3 +1,4 @@
+from fastapi.middleware.cors import CORSMiddleware
 import os
 from dotenv import load_dotenv
 import datetime
@@ -10,6 +11,15 @@ from typing import Optional
 load_dotenv()
 
 app = FastAPI()
+
+# Add CORS Middleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"], # Allows all origins, you can restrict this to your Vercel URL
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # DynamoDB Configuration
 DYNAMODB_TABLE = "CS432_Tasks"
@@ -63,12 +73,29 @@ async def handle_task(request: TaskRequest):
         # 3. Call AWS Summarizer Agent (Ollama on EC2)
         summary = "Summary generation failed."
         try:
+            # Ultra-simplified prompt for small models
+            ai_prompt = (
+                f"Write a short summary of the text below. "
+                f"Use only the provided text. Do not mention the internet.\n\n"
+                f"TEXT TO SUMMARIZE:\n{research_data[:1500]}\n\n" # Shortened to 1500 to keep model focused
+                f"SUMMARY:"
+            )
+            
+            # Debug: Print the prompt to the terminal
+            print("\n--- DEBUG: PROMPT SENT TO EC2 ---")
+            print(ai_prompt)
+            print("---------------------------------\n")
+            
             summary_payload = {
                 "model": "gemma:2b",
-                "prompt": f"Summarize this research: {research_data}",
-                "stream": False
+                "prompt": ai_prompt,
+                "stream": False,
+                "options": {
+                    "temperature": 0.1,
+                    "top_p": 0.9
+                }
             }
-            summary_resp = await client.post(SUMMARIZER_URL, json=summary_payload, timeout=60.0)
+            summary_resp = await client.post(SUMMARIZER_URL, json=summary_payload, timeout=90.0)
             summary = summary_resp.json().get("response", "No summary generated")
         except Exception as e:
             summary = f"Summarizer error: {str(e)}"
