@@ -1,98 +1,122 @@
 "use client";
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { Search, History, Send, Database, Cpu } from 'lucide-react';
 
 export default function Home() {
   const [prompt, setPrompt] = useState('');
   const [loading, setLoading] = useState(false);
-  const [result, setResult] = useState<any>(null);
+  const [messages, setMessages] = useState<any[]>([]);
+  const [history, setHistory] = useState<any[]>([]);
+  const userId = 'test_user_123'; // Persistent ID for your project
+  const gatewayUrl = process.env.NEXT_PUBLIC_GATEWAY_URL || 'http://localhost:8000';
+
+  // Fetch history on load
+  const fetchHistory = async () => {
+    try {
+      const res = await fetch(`${gatewayUrl}/history/${userId}`, {
+        headers: { 'ngrok-skip-browser-warning': 'true' }
+      });
+      const data = await res.json();
+      if (data.status === "success") setHistory(data.history);
+    } catch (e) { console.error("History fetch failed", e); }
+  };
+
+  useEffect(() => { fetchHistory(); }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setLoading(true);
-    setResult(null);
+    if (!prompt.trim()) return;
 
-    const gatewayUrl = process.env.NEXT_PUBLIC_GATEWAY_URL || 'http://localhost:8000';
+    const userMessage = { role: 'user', content: prompt };
+    setMessages(prev => [...prev, userMessage]);
+    setLoading(true);
+    setPrompt('');
 
     try {
       const response = await fetch(`${gatewayUrl}/task`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'ngrok-skip-browser-warning': 'true', // Added for Ngrok Free Tier
-        },
-        body: JSON.stringify({
-          user_id: 'test_user_123', // Static for this prototype
-          prompt: prompt,
-        }),
+        headers: { 'Content-Type': 'application/json', 'ngrok-skip-browser-warning': 'true' },
+        body: JSON.stringify({ user_id: userId, prompt: userMessage.content }),
       });
-
       const data = await response.json();
-      setResult(data);
+      setMessages(prev => [...prev, { role: 'assistant', ...data }]);
+      fetchHistory(); // Refresh sidebar after new task completes
     } catch (error) {
-      console.error('Error fetching data:', error);
-      setResult({ error: `Failed to reach Gateway at ${gatewayUrl}. Ensure the Ngrok tunnel is active and Vercel env vars are updated.` });
+      setMessages(prev => [...prev, { role: 'error', content: "Failed to connect to Gateway." }]);
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <main className="min-h-screen p-8 bg-gray-50 flex flex-col items-center">
-      <h1 className="text-3xl font-bold mb-8 text-blue-800">CS-432 Multi-Agent Research System</h1>
-      
-      <div className="w-full max-w-2xl bg-white p-6 rounded-lg shadow-md">
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Enter your research topic
-            </label>
-            <textarea
-              className="w-full p-3 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:outline-none h-32 text-black"
-              placeholder="What do you want to research?"
+    <div className="flex h-screen bg-white text-gray-800">
+      {/* Sidebar: History */}
+      <aside className="w-64 bg-gray-50 border-r border-gray-200 flex flex-col">
+        <div className="p-4 border-b flex items-center gap-2 font-bold text-blue-700">
+          <History size={20} /> Research History
+        </div>
+        <div className="flex-1 overflow-y-auto p-2 space-y-1">
+          {history.length === 0 ? (
+            <p className="p-4 text-xs text-gray-400 italic">No research history yet.</p>
+          ) : (
+            history.map((item, i) => (
+              <button key={i} className="w-full text-left p-2 text-sm hover:bg-gray-200 rounded truncate">
+                {item.prompt}
+              </button>
+            ))
+          )}
+        </div>
+      </aside>
+
+      {/* Main Chat Area */}
+      <main className="flex-1 flex flex-col relative">
+        {/* Messages Feed */}
+        <div className="flex-1 overflow-y-auto p-6 space-y-6 pb-32">
+          {messages.length === 0 && (
+            <div className="h-full flex flex-col items-center justify-center text-center opacity-50">
+              <Cpu size={48} className="mb-4 text-blue-600" />
+              <h2 className="text-xl font-semibold">How can I help with your research?</h2>
+            </div>
+          )}
+          {messages.map((msg, i) => (
+            <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+              <div className={`max-w-3xl p-4 rounded-2xl ${
+                msg.role === 'user' ? 'bg-blue-600 text-white' : 'bg-gray-100 border border-gray-200'
+              }`}>
+                {msg.role === 'assistant' ? (
+                  <div className="space-y-4 text-black">
+                    <p className="font-medium">{msg.summary}</p>
+                    <details className="text-xs opacity-70">
+                      <summary className="cursor-pointer hover:underline">View Raw Research</summary>
+                      <pre className="mt-2 whitespace-pre-wrap">{msg.research}</pre>
+                    </details>
+                  </div>
+                ) : (
+                  <p>{msg.content}</p>
+                )}
+              </div>
+            </div>
+          ))}
+          {loading && <div className="text-blue-600 animate-pulse text-sm">System agents are researching...</div>}
+        </div>
+
+        {/* Sticky Input Bar */}
+        <div className="absolute bottom-0 w-full p-6 bg-gradient-to-t from-white via-white to-transparent">
+          <form onSubmit={handleSubmit} className="max-w-3xl mx-auto relative">
+            <input
+              className="w-full p-4 pr-12 rounded-full border border-gray-300 shadow-sm focus:ring-2 focus:ring-blue-500 outline-none text-black"
+              placeholder="Enter research topic..."
               value={prompt}
               onChange={(e) => setPrompt(e.target.value)}
-              required
+              disabled={loading}
             />
-          </div>
-          
-          <button
-            type="submit"
-            disabled={loading}
-            className={`w-full py-3 rounded-md text-white font-semibold transition-colors ${
-              loading ? 'bg-gray-400 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700'
-            }`}
-          >
-            {loading ? 'Processing...' : 'Run Distributed Task'}
-          </button>
-        </form>
-
-        {result && (
-          <div className="mt-8 space-y-4 border-t pt-6">
-            <h2 className="text-xl font-semibold text-gray-800">System Output</h2>
-            
-            <div className="bg-blue-50 p-4 rounded-md">
-              <h3 className="text-sm font-bold text-blue-900 uppercase tracking-wide">Research Results</h3>
-              <p className="mt-1 text-gray-700">{result.research}</p>
-            </div>
-
-            <div className="bg-green-50 p-4 rounded-md">
-              <h3 className="text-sm font-bold text-green-900 uppercase tracking-wide">AI Summary (Gemma:2b)</h3>
-              <p className="mt-1 text-gray-700">{result.summary}</p>
-            </div>
-
-            {result.error && (
-              <div className="bg-red-50 p-4 rounded-md text-red-700">
-                {result.error}
-              </div>
-            )}
-          </div>
-        )}
-      </div>
-      
-      <footer className="mt-12 text-sm text-gray-500">
-        Architecture: Gateway (8000) → Researcher (8001) → EC2 Summarizer
-      </footer>
-    </main>
+            <button type="submit" className="absolute right-3 top-3 p-2 bg-blue-600 text-white rounded-full hover:bg-blue-700 disabled:bg-gray-400">
+              <Send size={20} />
+            </button>
+          </form>
+        </div>
+      </main>
+    </div>
   );
 }

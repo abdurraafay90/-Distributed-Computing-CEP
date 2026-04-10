@@ -5,6 +5,7 @@ from dotenv import load_dotenv
 import datetime
 import httpx
 import boto3
+from boto3.dynamodb.conditions import Key
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 from typing import Optional
@@ -40,6 +41,19 @@ table = dynamodb.Table(DYNAMODB_TABLE)
 RESEARCHER_URL = "http://localhost:8001/research"
 SUMMARIZER_URL = "http://13.60.182.213:11434/api/generate"
 
+@app.get("/history/{user_id}")
+async def get_task_history(user_id: str):
+    """Retrieves all past research tasks for a specific user."""
+    try:
+        # Query items with user_id, ScanIndexForward=False sorts by newest first
+        response = table.query(
+            KeyConditionExpression=Key('user_id').eq(user_id),
+            ScanIndexForward=False 
+        )
+        return {"status": "success", "history": response.get('Items', [])}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 class TaskRequest(BaseModel):
     user_id: str
     prompt: str
@@ -48,7 +62,7 @@ class TaskRequest(BaseModel):
 async def handle_task(request: TaskRequest):
     timestamp = datetime.datetime.now().isoformat()
     
-    # 1. DynamoDB Logic: Initial status "IN_PROGRESS"
+    # 1. DynamoDB Logic: Initial status
     try:
         table.put_item(
             Item={
@@ -61,24 +75,25 @@ async def handle_task(request: TaskRequest):
     except Exception as e:
         print(f"DynamoDB Error: {e}")
 
-    # 2. Call Researcher Agent
     async with httpx.AsyncClient() as client:
+        # 2. Call Researcher Agent (Now using Tavily)
         try:
-            res_resp = await client.post(RESEARCHER_URL, json={"query": request.prompt}, timeout=30.0)
-            research_data = res_resp.json().get("results", "No research data found.")
-            
-            # Prepare context for Summarizer
-            aggregated_context = f"NEWS AND RESEARCH DATA:\n{research_data}"
+            research_resp = await client.post(RESEARCHER_URL, json={"query": request.prompt}, timeout=30.0)
+            research_data = research_resp.json().get("results", "No research found.")
         except Exception as e:
             research_data = f"Research failed: {str(e)}"
-            aggregated_context = research_data
 
-        # 3. Call AWS Summarizer Agent (Ollama on EC2)
-        summary = "Summary generation failed."
+        # 3. Call AWS Summarizer Agent (Gemma on EC2)
         try:
+            ai_prompt = (
+                f"Summarize the latest news found below. "
+                f"TEXT TO SUMMARIZE:\n{research_data[:2000]}\n\n"
+                f"SUMMARY:"
+            )
+            
             summary_payload = {
                 "model": "gemma:2b",
-                "prompt": f"Summarize the following research data into a concise 3-paragraph report:\n\n{aggregated_context[:2500]}",
+                "prompt": ai_prompt,
                 "stream": False,
                 "options": {
                     "temperature": 0.1,

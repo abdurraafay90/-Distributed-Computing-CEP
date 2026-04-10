@@ -7,24 +7,21 @@ from dotenv import load_dotenv
 load_dotenv()
 app = FastAPI()
 
-# Ensure TAVILY_API_KEY is in your .env
-tavily_key = os.getenv("TAVILY_API_KEY")
-if not tavily_key:
+# Initialize Tavily (Requires TAVILY_API_KEY in .env)
+tavily_api_key = os.getenv("TAVILY_API_KEY")
+if not tavily_api_key:
     print("WARNING: TAVILY_API_KEY not found in .env")
 
-tavily = TavilyClient(api_key=tavily_key)
+tavily = TavilyClient(api_key=tavily_api_key)
 
 class ResearchRequest(BaseModel):
     query: str
 
 @app.post("/research")
 async def do_research(request: ResearchRequest):
-    """
-    Uses Tavily's AI-optimized search to find recent news.
-    """
     print(f"Researcher received query: {request.query}")
     try:
-        # 'topic="news"' filters for recent events; 'search_depth="advanced"' gets better context
+        # topic="news" filters for recent events to solve the 'latest news' issue
         response = tavily.search(
             query=request.query,
             topic="news",
@@ -36,8 +33,10 @@ async def do_research(request: ResearchRequest):
         for r in response.get('results', []):
             results_list.append(f"Source: {r['url']}\nContent: {r['content']}")
         
-        combined_report = "\n\n".join(results_list)
-        return {"status": "success", "results": combined_report}
+        return {
+            "status": "success", 
+            "results": "\n\n".join(results_list)
+        }
     except Exception as e:
         print(f"Tavily Error: {e}")
         return {"status": "error", "results": f"Tavily Search failed: {str(e)}"}
