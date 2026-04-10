@@ -95,8 +95,16 @@ export default function Home() {
             <p className="px-3 py-4 text-xs italic text-zinc-400">No past tasks found.</p>
           ) : (
             history.map((item, i) => (
-              <button key={i} className="w-full text-left p-3 text-sm hover:bg-zinc-200 dark:hover:bg-zinc-800 rounded-xl truncate transition-colors">
-                {item.prompt}
+              <button 
+                key={i} 
+                className="w-full text-left p-3 text-sm hover:bg-zinc-200 dark:hover:bg-zinc-800 rounded-xl truncate transition-colors group relative"
+                title={item.prompt} // Show full prompt on hover
+              >
+                <div className="flex items-center gap-2">
+                  <div className="w-1.5 h-1.5 rounded-full bg-blue-500 opacity-50"></div>
+                  {/* Use the new title field, or fall back to prompt */}
+                  <span className="truncate">{item.title || item.prompt}</span>
+                </div>
               </button>
             ))
           )}

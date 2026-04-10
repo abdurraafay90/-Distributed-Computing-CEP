@@ -62,48 +62,46 @@ class TaskRequest(BaseModel):
 async def handle_task(request: TaskRequest):
     timestamp = datetime.datetime.now().isoformat()
     
-    # 1. DynamoDB Logic: Initial status
-    try:
-        table.put_item(
-            Item={
-                'user_id': request.user_id,
-                'task_timestamp': timestamp,
-                'prompt': request.prompt,
-                'status': 'IN_PROGRESS'
-            }
-        )
-    except Exception as e:
-        print(f"DynamoDB Error: {e}")
-
     async with httpx.AsyncClient() as client:
-        # 2. Call Researcher Agent (Now using Tavily)
+        # 1. Generate a Short Title (Subject) using Gemma:2b
+        generated_title = "New Research"
+        try:
+            title_payload = {
+                "model": "gemma:2b",
+                "prompt": f"Summarize this topic into a 3-word title. No punctuation. TOPIC: {request.prompt}\nTITLE:",
+                "stream": False,
+                "options": {"temperature": 0.3}
+            }
+            # Fast call to EC2 for the title
+            title_resp = await client.post(SUMMARIZER_URL, json=title_payload, timeout=10.0)
+            generated_title = title_resp.json().get("response", "New Research").strip().replace("\n", "")
+        except Exception:
+            generated_title = request.prompt[:30] + "..." # Fallback
+
+        # 2. Log to DynamoDB with the new 'title' field
+        try:
+            table.put_item(
+                Item={
+                    'user_id': request.user_id,
+                    'task_timestamp': timestamp,
+                    'prompt': request.prompt,
+                    'title': generated_title, # New Field!
+                    'status': 'IN_PROGRESS'
+                }
+            )
+        except Exception as e:
+            print(f"DynamoDB Error: {e}")
+
+        # 3. Call Researcher Agent (Now using Tavily)
         try:
             research_resp = await client.post(RESEARCHER_URL, json={"query": request.prompt}, timeout=30.0)
             research_data = research_resp.json().get("results", "No research found.")
+            
+            # Prepare context for Summarizer
+            aggregated_context = f"NEWS AND RESEARCH DATA:\n{research_data}"
         except Exception as e:
             research_data = f"Research failed: {str(e)}"
-
-        # 3. Call AWS Summarizer Agent (Gemma on EC2)
-        try:
-            ai_prompt = (
-                f"Summarize the latest news found below. "
-                f"TEXT TO SUMMARIZE:\n{research_data[:2000]}\n\n"
-                f"SUMMARY:"
-            )
-            
-            summary_payload = {
-                "model": "gemma:2b",
-                "prompt": ai_prompt,
-                "stream": False,
-                "options": {
-                    "temperature": 0.1,
-                    "top_p": 0.9
-                }
-            }
-            summary_resp = await client.post(SUMMARIZER_URL, json=summary_payload, timeout=90.0)
-            summary = summary_resp.json().get("response", "No summary generated")
-        except Exception as e:
-            summary = f"Summarizer error: {str(e)}"
+            aggregated_context = research_data
 
     # 4. Finalization: Update DynamoDB and Return
     try:
