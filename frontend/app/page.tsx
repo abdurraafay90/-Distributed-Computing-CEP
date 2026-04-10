@@ -19,6 +19,7 @@ export default function Home() {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          'ngrok-skip-browser-warning': 'true', // Added for Ngrok Free Tier
         },
         body: JSON.stringify({
           user_id: 'test_user_123', // Static for this prototype

@@ -27,8 +27,8 @@ table = dynamodb.Table(DYNAMODB_TABLE)
 
 # Agent Endpoints
 RESEARCHER_URL = "http://localhost:8001/research"
-# User needs to provide this or use a placeholder
-SUMMARIZER_URL = "http://YOUR_EC2_PUBLIC_IP:11434/api/generate"
+# EC2 Summarizer Agent (Ollama)
+SUMMARIZER_URL = "http://13.60.182.213:11434/api/generate"
 
 class TaskRequest(BaseModel):
     user_id: str
