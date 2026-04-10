@@ -1,5 +1,6 @@
 from fastapi.middleware.cors import CORSMiddleware
 import os
+import asyncio
 from dotenv import load_dotenv
 import datetime
 import httpx
@@ -15,7 +16,7 @@ app = FastAPI()
 # Add CORS Middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"], # Allows all origins, you can restrict this to your Vercel URL
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -37,7 +38,6 @@ table = dynamodb.Table(DYNAMODB_TABLE)
 
 # Agent Endpoints
 RESEARCHER_URL = "http://localhost:8001/research"
-# EC2 Summarizer Agent (Ollama)
 SUMMARIZER_URL = "http://13.60.182.213:11434/api/generate"
 
 class TaskRequest(BaseModel):
@@ -59,36 +59,26 @@ async def handle_task(request: TaskRequest):
             }
         )
     except Exception as e:
-        # Fallback if table doesn't exist yet or permissions fail
         print(f"DynamoDB Error: {e}")
 
     # 2. Call Researcher Agent
     async with httpx.AsyncClient() as client:
         try:
-            research_resp = await client.post(RESEARCHER_URL, json={"query": request.prompt})
-            research_data = research_resp.json().get("results", "No research found")
+            res_resp = await client.post(RESEARCHER_URL, json={"query": request.prompt}, timeout=30.0)
+            research_data = res_resp.json().get("results", "No research data found.")
+            
+            # Prepare context for Summarizer
+            aggregated_context = f"NEWS AND RESEARCH DATA:\n{research_data}"
         except Exception as e:
             research_data = f"Research failed: {str(e)}"
+            aggregated_context = research_data
 
         # 3. Call AWS Summarizer Agent (Ollama on EC2)
         summary = "Summary generation failed."
         try:
-            # Ultra-simplified prompt for small models
-            ai_prompt = (
-                f"Write a short summary of the text below. "
-                f"Use only the provided text. Do not mention the internet.\n\n"
-                f"TEXT TO SUMMARIZE:\n{research_data[:1500]}\n\n" # Shortened to 1500 to keep model focused
-                f"SUMMARY:"
-            )
-            
-            # Debug: Print the prompt to the terminal
-            print("\n--- DEBUG: PROMPT SENT TO EC2 ---")
-            print(ai_prompt)
-            print("---------------------------------\n")
-            
             summary_payload = {
                 "model": "gemma:2b",
-                "prompt": ai_prompt,
+                "prompt": f"Summarize the following research data into a concise 3-paragraph report:\n\n{aggregated_context[:2500]}",
                 "stream": False,
                 "options": {
                     "temperature": 0.1,
