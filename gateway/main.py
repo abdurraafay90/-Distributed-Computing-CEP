@@ -52,25 +52,23 @@ async def get_task_history(user_id: str):
 @app.post("/task")
 async def handle_task(request: TaskRequest):
     timestamp = datetime.datetime.now().isoformat()
-    
-    # Initialize variables to prevent NameError
     generated_title = "New Research"
     research_data = ""
-    summary = "No summary generated."
+    summary = "Summarization failed."
 
     async with httpx.AsyncClient() as client:
-        # 1. Generate Subject Title
+        # 1. Generate Title (Fast call)
         try:
             title_resp = await client.post(SUMMARIZER_URL, json={
                 "model": "gemma:2b",
-                "prompt": f"Summarize this topic into a 3-word title. No punctuation. TOPIC: {request.prompt}\nTITLE:",
+                "prompt": f"Title for: {request.prompt}\nTITLE:",
                 "stream": False
             }, timeout=10.0)
             generated_title = title_resp.json().get("response", "New Research").strip()
-        except:
-            generated_title = request.prompt[:30] + "..."
+        except Exception as e:
+            print(f"Title Error: {e}")
 
-        # 2. Log Initial Task to DynamoDB
+        # 2. Initial Log to DynamoDB
         table.put_item(Item={
             'user_id': request.user_id,
             'task_timestamp': timestamp,
@@ -79,39 +77,55 @@ async def handle_task(request: TaskRequest):
             'status': 'IN_PROGRESS'
         })
 
-        # 3. Call Researcher Agent (Tavily)
+        # 3. Call Researcher (Tavily)
         try:
             research_resp = await client.post(RESEARCHER_URL, json={"query": request.prompt}, timeout=30.0)
-            research_data = research_resp.json().get("results", "No research found.")
+            research_data = research_resp.json().get("results", "")
         except Exception as e:
             research_data = f"Research failed: {str(e)}"
 
-        # 4. Call Summarizer Agent (Improved Prompt for More Detail)
-        try:
-            ai_prompt = (
-                f"Act as a Technical Journalist. Write a multi-paragraph, comprehensive news report based on the following data. "
-                f"Include specific incidents, technical details, and anecdotes mentioned in the text. "
-                f"Ensure you discuss the implications of the findings. Use bullet points for key technical facts.\n\n"
-                f"RESEARCH DATA:\n{research_data[:4000]}\n\n" # Increased context window
-                f"DETAILED NEWS REPORT:"
-            )
-            
-            summary_payload = {
-                "model": "gemma:2b",
-                "prompt": ai_prompt,
-                "stream": False,
-                "options": {
-                    "num_predict": 1024, # Request a longer response
-                    "temperature": 0.4,   # Balance creativity and accuracy
-                    "top_p": 0.9
-                }
-            }
-            summary_resp = await client.post(SUMMARIZER_URL, json=summary_payload, timeout=120.0)
-            summary = summary_resp.json().get("response", "Summarization failed.")
-        except Exception as e:
-            summary = f"Summarizer error: {str(e)}"
+        # 4. Call Summarizer (FIXED FOR TIMEOUTS & OOM)
+        if research_data:
+            try:
+                # 1. Increase the limit to 4000 chars so the AI actually sees all 3 sources
+                context_for_ai = research_data[:4000] 
+                
+                ai_prompt = (
+                    f"You are a Technical Journalist. Using ONLY the sources provided below, "
+                    f"write a detailed multi-paragraph news report. "
+                    f"Identify and group the main developments. "
+                    f"Do not include intro fluff from the sources.\n\n"
+                    f"DATA SOURCES:\n{context_for_ai}\n\n"
+                    f"DETAILED REPORT:"
+                )
 
-    # 5. Finalize DynamoDB record
+                # INCREASED TIMEOUT: Set to 180 seconds to allow slow EC2 inference
+                summary_resp = await client.post(
+                    SUMMARIZER_URL, 
+                    json={
+                        "model": "gemma:2b", 
+                        "prompt": ai_prompt, 
+                        "stream": False,
+                        "options": {
+                            "num_predict": 1000, # Allows for a much longer, detailed response
+                            "temperature": 0.3    # Lower temp = more factual
+                        } 
+                    }, 
+                    timeout=180.0 
+                )
+                
+                if summary_resp.status_code == 200:
+                    summary = summary_resp.json().get("response", "Empty response from model.")
+                else:
+                    summary = f"EC2 Error: {summary_resp.status_code} - {summary_resp.text}"
+            
+            except httpx.ReadTimeout:
+                summary = "Error: The EC2 Summarizer took too long to respond (Timeout)."
+            except Exception as e:
+                summary = f"Summarizer Error: {str(e)}"
+                print(f"DEBUG: Summarizer failed with: {e}")
+
+    # 5. Finalize DynamoDB
     table.update_item(
         Key={'user_id': request.user_id, 'task_timestamp': timestamp},
         UpdateExpression="set #s = :s, summary = :sum",
@@ -120,8 +134,8 @@ async def handle_task(request: TaskRequest):
     )
 
     return {
-        "status": "COMPLETED",
-        "title": generated_title,
+        "status": "COMPLETED", 
+        "title": generated_title, 
         "research": research_data,
         "summary": summary
     }
